@@ -1,4 +1,4 @@
-package com.tosha;
+package com.tosh;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
