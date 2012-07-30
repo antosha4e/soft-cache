@@ -1,9 +1,11 @@
-package com.tosha;
+package com.tosh;
 
+import java.io.Serializable;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.SoftReference;
 import java.util.AbstractMap;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Set;
@@ -12,11 +14,11 @@ import java.util.Set;
  * User: arsentyev
  * Date: 20.07.12
  */
-public class SoftHashMap extends AbstractMap {
+public class SoftHashMap<K, V> extends AbstractMap<K, V> implements Serializable {
     /**
      * The internal HashMap that will hold the SoftReference.
      */
-    private final Map hash = new HashMap();
+    private final Map<K, SoftReference<V>> hash = new HashMap<K, SoftReference<V>>();
     /**
      * The number of "hard" references to hold internally.
      */
@@ -24,11 +26,11 @@ public class SoftHashMap extends AbstractMap {
     /**
      * The FIFO list of hard references, order of last access.
      */
-    private final LinkedList hardCache = new LinkedList();
+    private final LinkedList<V> hardCache = new LinkedList<V>();
     /**
      * Reference queue for cleared SoftReference objects.
      */
-    private final ReferenceQueue queue = new ReferenceQueue();
+    private final ReferenceQueue<V> queue = new ReferenceQueue<V>();
 
     public SoftHashMap() {
         this(100);
@@ -38,10 +40,10 @@ public class SoftHashMap extends AbstractMap {
         HARD_SIZE = hardSize;
     }
 
-    public Object get(Object key) {
-        Object result = null;
+    public V get(Object key) {
+        V result = null;
         // We get the SoftReference represented by that key
-        SoftReference soft_ref = (SoftReference) hash.get(key);
+        SoftReference<V> soft_ref = (SoftReference<V>) hash.get(key);
         if (soft_ref != null) {
             // From the SoftReference we get the value, which can be
             // null if it was not in the map, or it was removed in
@@ -72,19 +74,11 @@ public class SoftHashMap extends AbstractMap {
      * not only the value but also the key to make it easier to find
      * the entry in the HashMap after it's been garbage collected.
      */
-    private static class SoftValue extends SoftReference {
-        private final Object key; // always make data member final
+    private static class SoftValue<K, V> extends SoftReference<K> {
+        private final K key;
 
-        /**
-         * Did you know that an outer class can access private data
-         * members and methods of an inner class?  I didn't know that!
-         * I thought it was only the inner class who could access the
-         * outer class's private information.  An outer class can also
-         * access private members of an inner class inside its inner
-         * class.
-         */
-        private SoftValue(Object k, Object key, ReferenceQueue q) {
-            super(k, q);
+        private SoftValue(K key, V value, ReferenceQueue<K> q) {
+            super(key, q);
             this.key = key;
         }
     }
@@ -97,21 +91,21 @@ public class SoftHashMap extends AbstractMap {
     private void processQueue() {
         SoftValue sv;
         while ((sv = (SoftValue) queue.poll()) != null) {
-            hash.remove(sv.key); // we can access private data!
+            hash.remove(sv.key);
         }
     }
 
     /**
      * Here we put the key, value pair into the HashMap using a SoftValue object.
      */
-    public Object put(Object key, Object value) {
+    public V put(K key, V value) {
         processQueue(); // throw out garbage collected values first
-        return hash.put(key, new SoftValue(value, key, queue));
+        return hash.put(key, new SoftValue(key, value, queue)).get();
     }
 
-    public Object remove(Object key) {
+    public V remove(Object key) {
         processQueue();
-        return hash.remove(key);
+        return hash.remove(key).get();
     }
 
     public void clear() {
@@ -125,7 +119,35 @@ public class SoftHashMap extends AbstractMap {
         return hash.size();
     }
 
-    public Set entrySet() {
-        throw new UnsupportedOperationException();
+//    public Set entrySet() {
+//        throw new UnsupportedOperationException();
+//    }
+
+    /**
+     * Returns a copy of the key/values in the map at the point of
+     * calling.  However, setValue still sets the value in the
+     * actual SoftHashMap.
+     */
+    public Set<Entry<K,V>> entrySet() {
+        processQueue();
+        Set<Entry<K,V>> result = new LinkedHashSet<Entry<K, V>>();
+        for (final Entry<K, SoftReference<V>> entry : hash.entrySet()) {
+            final V value = entry.getValue().get();
+            if (value != null) {
+                result.add(new Entry<K, V>() {
+                    public K getKey() {
+                        return entry.getKey();
+                    }
+                    public V getValue() {
+                        return value;
+                    }
+                    public V setValue(V v) {
+                        entry.setValue(new SoftReference<V>(v, queue));
+                        return value;
+                    }
+                });
+            }
+        }
+        return result;
     }
 }

@@ -1,4 +1,4 @@
-package com.tosha;
+package com.tosh;
 
 /**
  * Created by IntelliJ IDEA.
