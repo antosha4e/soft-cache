@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.lang.ref.SoftReference;
 import java.util.AbstractCollection;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
@@ -22,7 +23,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * Date: 20.07.12
  */
 public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements ConcurrentMap<K, V>, Serializable {
-//    private static final long serialVersionUID = 7249069246763182397L;
+    private static final long serialVersionUID = 7249069246763182397L;
 
     /*
      * The basic strategy is to subdivide the table among Segments,
@@ -140,14 +141,14 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
     static final class HashEntry<K, V> {
         final K key;
         final int hash;
-        volatile V value;
+        volatile SoftReference<V> value;
         final HashEntry<K, V> next;
 
         HashEntry(K key, int hash, HashEntry<K, V> next, V value) {
             this.key = key;
             this.hash = hash;
             this.next = next;
-            this.value = value;
+            this.value = new SoftReference<V>(value);
         }
 
         @SuppressWarnings("unchecked")
@@ -274,7 +275,7 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
         V readValueUnderLock(HashEntry<K, V> e) {
             lock();
             try {
-                return e.value;
+                return e.value.get();
             } finally {
                 unlock();
             }
@@ -287,7 +288,7 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
                 HashEntry<K, V> e = getFirst(hash);
                 while (e != null) {
                     if (e.hash == hash && key.equals(e.key)) {
-                        V v = e.value;
+                        V v = e.value.get();
                         if (v != null)
                             return v;
                         return readValueUnderLock(e); // recheck
@@ -316,7 +317,7 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
                 int len = tab.length;
                 for (int i = 0; i < len; i++) {
                     for (HashEntry<K, V> e = tab[i]; e != null; e = e.next) {
-                        V v = e.value;
+                        V v = e.value.get();
                         if (v == null) // recheck
                             v = readValueUnderLock(e);
                         if (value.equals(v))
@@ -337,7 +338,7 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
                 boolean replaced = false;
                 if (e != null && oldValue.equals(e.value)) {
                     replaced = true;
-                    e.value = newValue;
+                    e.value = new SoftReference<V>(newValue);
                 }
                 return replaced;
             } finally {
@@ -354,8 +355,8 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
 
                 V oldValue = null;
                 if (e != null) {
-                    oldValue = e.value;
-                    e.value = newValue;
+                    oldValue = e.value.get();
+                    e.value = new SoftReference<V>(newValue);
                 }
                 return oldValue;
             } finally {
@@ -379,9 +380,10 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
 
                 V oldValue;
                 if (e != null) {
-                    oldValue = e.value;
-                    if (!onlyIfAbsent)
-                        e.value = value;
+                    oldValue = e.value.get();
+                    if (!onlyIfAbsent) {
+                        e.value = new SoftReference<V>(value);
+                    }
                 } else {
                     oldValue = null;
                     ++modCount;
@@ -449,8 +451,7 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
                         for (HashEntry<K, V> p = e; p != lastRun; p = p.next) {
                             int k = p.hash & sizeMask;
                             HashEntry<K, V> n = newTable[k];
-                            newTable[k] = new HashEntry<K, V>(p.key, p.hash,
-                                    n, p.value);
+                            newTable[k] = new HashEntry<K, V>(p.key, p.hash,n, p.value.get());
                         }
                     }
                 }
@@ -474,7 +475,7 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
 
                 V oldValue = null;
                 if (e != null) {
-                    V v = e.value;
+                    V v = e.value.get();
                     if (value == null || value.equals(v)) {
                         oldValue = v;
                         // All entries following removed node can stay
@@ -483,8 +484,7 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
                         ++modCount;
                         HashEntry<K, V> newFirst = e.next;
                         for (HashEntry<K, V> p = first; p != e; p = p.next)
-                            newFirst = new HashEntry<K, V>(p.key, p.hash,
-                                    newFirst, p.value);
+                            newFirst = new HashEntry<K, V>(p.key, p.hash,newFirst, p.value.get());
                         tab[index] = newFirst;
                         count = c; // write-volatile
                     }
@@ -1073,11 +1073,11 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
 
     final class ValueIterator extends HashIterator implements Iterator<V>, Enumeration<V> {
         public V next() {
-            return super.nextEntry().value;
+            return super.nextEntry().value.get();
         }
 
         public V nextElement() {
-            return super.nextEntry().value;
+            return super.nextEntry().value.get();
         }
     }
 
@@ -1110,7 +1110,7 @@ public class ConcurrentSoftHashMap<K, V> extends AbstractMap<K, V> implements Co
     final class EntryIterator extends HashIterator implements Iterator<Entry<K, V>> {
         public Map.Entry<K, V> next() {
             HashEntry<K, V> e = super.nextEntry();
-            return new WriteThroughEntry(e.key, e.value);
+            return new WriteThroughEntry(e.key, e.value.get());
         }
     }
 
