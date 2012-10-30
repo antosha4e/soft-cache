@@ -1,4 +1,4 @@
-package com.tosh;
+package com.tosh.data;
 
 import java.lang.ref.SoftReference;
 import java.util.AbstractList;
@@ -12,7 +12,7 @@ import java.util.ListIterator;
  * User: arsentyev
  * Date: 30.07.12
  */
-public class SoftList<T> extends AbstractList<T> {
+public class SoftArrayList<T> extends AbstractList<T> {
     private final ArrayList<SoftReference<T>> list = new ArrayList<SoftReference<T>>();
 
     public int size() {
@@ -215,6 +215,15 @@ public class SoftList<T> extends AbstractList<T> {
             modified = true;
         }
         return modified;
+    }
+
+    public void removeNullElements() {
+        Iterator<T> e = iterator();
+        while (e.hasNext()) {
+            if (e.next() == null) {
+                e.remove();
+            }
+        }
     }
 
     public List<T> subList(int fromIndex, int toIndex, boolean notNull) {
