@@ -1,4 +1,4 @@
-package com.tosh;
+package com.tosh.data;
 
 import java.io.Serializable;
 import java.lang.ref.ReferenceQueue;
